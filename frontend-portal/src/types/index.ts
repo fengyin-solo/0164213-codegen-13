@@ -33,6 +33,9 @@ export interface NewsItem {
 }
 
 // ==================== 产品相关 ====================
+// 项目所处阶段：开发中 / 测试验收中 / 已上线运维
+export type DeliveryStatus = '开发中' | '测试验收中' | '已上线运维'
+
 export interface ProductItem {
   id: number
   name: string
@@ -41,6 +44,12 @@ export interface ProductItem {
   features: string[]
   price?: number
   category: string
+  // 交付成效相关字段（仅已上线运维项目参与看板统计）
+  deliveryStatus?: DeliveryStatus
+  // 交付周期（天），已完成测试验收的项目才有
+  deliveryDays?: number
+  // 客户满意度（0-100，百分制），缺失表示暂无满意度数据
+  satisfaction?: number | null
 }
 
 // ==================== 联系表单 ====================

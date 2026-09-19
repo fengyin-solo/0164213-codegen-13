@@ -9,8 +9,24 @@
       </div>
     </section>
 
+    <!-- 从交付看板进入时的返回入口 -->
+    <div v-if="fromBoard" class="board-return">
+      <div class="return-inner">
+        <el-icon class="return-icon"><DataLine /></el-icon>
+        <span class="return-text">
+          您正在浏览交付成效看板中
+          <strong>{{ boardIndustryLabel }}</strong>
+          的相关案例入口
+        </span>
+        <el-button type="primary" round size="small" @click="backToBoard">
+          <el-icon class="el-icon--left"><ArrowLeft /></el-icon>
+          返回交付看板
+        </el-button>
+      </div>
+    </div>
+
     <!-- 数据统计 -->
-    <section class="stats-section">
+    <section class="stats-section" :class="{ 'stats-section--pushed': fromBoard }">
       <div class="stats-container">
         <div v-for="stat in stats" :key="stat.label" class="stat-card">
           <div class="stat-icon">{{ stat.icon }}</div>
@@ -283,8 +299,12 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import type { CaseItem, ConsultationForm } from '@/types'
+
+const route = useRoute()
+const router = useRouter()
 
 const loading = ref(false)
 const detailVisible = ref(false)
@@ -293,6 +313,26 @@ const formRef = ref<FormInstance>()
 const activeIndustry = ref('')
 const currentCase = ref<CaseItem | null>(null)
 const selectedCase = ref<CaseItem | null>(null)
+
+// 从交付看板带入的行业上下文
+const fromBoard = ref(false)
+const boardIndustry = ref('')
+
+const boardIndustryLabel = computed(() => {
+  const map: Record<string, string> = {
+    网站建设: '网站建设',
+    电商服务: '电商服务',
+    移动开发: '移动开发',
+    咨询服务: '咨询服务'
+  }
+  return boardIndustry.value ? (map[boardIndustry.value] ?? '') : '全部行业'
+})
+
+// 返回产品页的交付看板，并停留在进入前查看的行业
+const backToBoard = () => {
+  const query: Record<string, string> = { board: boardIndustry.value }
+  router.push({ path: '/products', query, hash: '#board' })
+}
 
 const industries = [
   { label: '全部行业', value: '', icon: '🏢', count: 24 },
@@ -609,6 +649,9 @@ const handleSubmit = async () => {
 
 onMounted(() => {
   loading.value = true
+  // 交付看板跳转时携带 from=board 与行业上下文
+  fromBoard.value = route.query.from === 'board'
+  boardIndustry.value = (route.query.industry as string) || ''
   setTimeout(() => {
     loading.value = false
   }, 500)
@@ -690,6 +733,48 @@ onMounted(() => {
   margin-top: -$spacing-xxl;
   position: relative;
   z-index: 10;
+
+  &--pushed {
+    margin-top: $spacing-lg;
+  }
+}
+
+// ==================== 看板返回条 ====================
+.board-return {
+  position: relative;
+  z-index: 10;
+  padding: $spacing-md $spacing-lg 0;
+
+  .return-inner {
+    display: flex;
+    align-items: center;
+    gap: $spacing-md;
+    max-width: $container-max-width;
+    margin: 0 auto;
+    padding: $spacing-md $spacing-lg;
+    background: white;
+    border: 1px solid rgba($primary-color, 0.25);
+    border-radius: $border-radius-lg;
+    box-shadow: $shadow-lg;
+    flex-wrap: wrap;
+  }
+
+  .return-icon {
+    color: $primary-color;
+    font-size: 20px;
+  }
+
+  .return-text {
+    flex: 1;
+    min-width: 200px;
+    font-size: $font-size-sm;
+    color: $text-color-regular;
+
+    strong {
+      color: $primary-color;
+      margin: 0 2px;
+    }
+  }
 }
 
 .stats-container {

@@ -12,12 +12,12 @@
     <!-- 产品分类 -->
     <section class="category-section">
       <div class="category-container">
-        <button 
-          v-for="cat in categories" 
+        <button
+          v-for="cat in categories"
           :key="cat.value"
           class="category-btn"
           :class="{ active: activeCategory === cat.value }"
-          @click="activeCategory = cat.value"
+          @click="handleCategoryChange(cat.value)"
         >
           <span class="cat-icon">{{ cat.icon }}</span>
           <span>{{ cat.label }}</span>
@@ -26,17 +26,32 @@
     </section>
 
     <!-- 产品列表 -->
-    <section class="products-section">
+    <section ref="productsSectionRef" class="products-section">
       <div class="products-container">
-        <div class="products-grid">
-          <div 
-            v-for="product in filteredProducts" 
-            :key="product.id" 
+        <!-- 从交付看板进入时的口径提示 -->
+        <div v-if="deliveredOnly" class="delivered-banner">
+          <el-icon class="banner-icon"><CircleCheckFilled /></el-icon>
+          <span class="banner-text">
+            当前仅展示已完成测试验收、进入<strong>上线运维</strong>的项目，共
+            <strong>{{ filteredProducts.length }}</strong> 个，统计口径与「交付成效看板」一致。
+          </span>
+          <el-button link type="primary" @click="exitDeliveredView">
+            查看全部产品 <el-icon><Right /></el-icon>
+          </el-button>
+        </div>
+
+        <div v-if="filteredProducts.length > 0" class="products-grid">
+          <div
+            v-for="product in filteredProducts"
+            :key="product.id"
             class="product-card"
           >
             <div class="product-image">
               <img :src="product.image" :alt="product.name" />
               <div class="product-badge">{{ product.category }}</div>
+              <div v-if="product.deliveryStatus" class="product-status" :class="statusClass(product.deliveryStatus)">
+                <i class="status-dot"></i>{{ product.deliveryStatus }}
+              </div>
             </div>
             <div class="product-content">
               <h3>{{ product.name }}</h3>
@@ -53,7 +68,30 @@
             </div>
           </div>
         </div>
+
+        <!-- 与看板一致的空态：该行业尚无完成测试验收的项目 -->
+        <el-empty v-else class="products-empty">
+          <template #description>
+            <div v-if="deliveredOnly" class="empty-desc">
+              <p class="empty-title">{{ activeCategory }}行业暂无已完成测试验收的项目</p>
+              <p>相关项目仍在开发或测试验收中，完成上线后将同步展示到产品列表与交付成效看板。</p>
+            </div>
+            <p v-else>暂无相关产品</p>
+          </template>
+          <el-button v-if="deliveredOnly" type="primary" round @click="showAllInCategory">
+            查看该行业全部产品
+          </el-button>
+        </el-empty>
       </div>
+    </section>
+
+    <!-- 交付成效看板 -->
+    <section id="board" class="board-section">
+      <DeliveryBoard
+        v-model="boardIndustry"
+        @browse-products="handleBrowseProducts"
+        @browse-cases="handleBrowseCases"
+      />
     </section>
 
     <!-- 服务流程 -->
@@ -118,6 +156,24 @@
               {{ feature }}
             </li>
           </ul>
+          <div v-if="currentProduct.deliveryStatus" class="dialog-delivery">
+            <div class="delivery-item">
+              <span class="delivery-label">项目阶段</span>
+              <span class="delivery-value">{{ currentProduct.deliveryStatus }}</span>
+            </div>
+            <template v-if="currentProduct.deliveryStatus === '已上线运维'">
+              <div v-if="currentProduct.deliveryDays" class="delivery-item">
+                <span class="delivery-label">交付周期</span>
+                <span class="delivery-value">{{ currentProduct.deliveryDays }} 天</span>
+              </div>
+              <div class="delivery-item">
+                <span class="delivery-label">客户满意度</span>
+                <span class="delivery-value">
+                  {{ currentProduct.satisfaction == null ? '暂无数据' : currentProduct.satisfaction + ' 分' }}
+                </span>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
       <template #footer>
@@ -129,94 +185,106 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
-import type { ProductItem } from '@/types'
+import { ref, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import type { ProductItem, DeliveryStatus } from '@/types'
+import DeliveryBoard from '@/components/common/DeliveryBoard.vue'
+import { PRODUCT_CATEGORIES, products as allProducts, deliveredProducts } from '@/data/products'
+import { filterProducts } from '@/data/deliveryStats'
 
 const router = useRouter()
-const activeCategory = ref('')
+const route = useRoute()
+
 const dialogVisible = ref(false)
 const currentProduct = ref<ProductItem | null>(null)
 
-const categories = [
-  { label: '全部服务', value: '', icon: '📦' },
-  { label: '网站建设', value: '网站建设', icon: '🖥️' },
-  { label: '电商服务', value: '电商服务', icon: '🛒' },
-  { label: '移动开发', value: '移动开发', icon: '📱' },
-  { label: '咨询服务', value: '咨询服务', icon: '💼' }
-]
+// 产品分类（网站建设 / 电商服务 / 移动开发 / 咨询服务）
+const categories = PRODUCT_CATEGORIES
 
-const products = ref<ProductItem[]>([
-  {
-    id: 1,
-    name: '企业官网建设',
-    description: '专业的企业官网设计与开发，打造品牌数字形象，提升企业影响力',
-    image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&fit=crop',
-    features: ['响应式设计', 'SEO优化', '后台管理系统', '多语言支持', '安全防护'],
-    category: '网站建设'
-  },
-  {
-    id: 2,
-    name: '品牌展示网站',
-    description: '高端品牌展示网站，突出品牌特色，传递品牌价值',
-    image: 'https://images.unsplash.com/photo-1467232004584-a241de8bcf5d?w=600&h=400&fit=crop',
-    features: ['创意设计', '动效交互', '品牌定制', '视觉冲击'],
-    category: '网站建设'
-  },
-  {
-    id: 3,
-    name: 'B2C电商平台',
-    description: '全功能B2C电商平台解决方案，助力线上业务快速增长',
-    image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&h=400&fit=crop',
-    features: ['商品管理', '订单系统', '支付集成', '营销工具', '数据分析'],
-    category: '电商服务'
-  },
-  {
-    id: 4,
-    name: 'B2B批发平台',
-    description: '专业的B2B批发交易平台，连接供应商与采购商',
-    image: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&h=400&fit=crop',
-    features: ['批量采购', '询价系统', '供应链管理', '账期结算'],
-    category: '电商服务'
-  },
-  {
-    id: 5,
-    name: 'iOS应用开发',
-    description: '原生iOS应用开发，提供流畅的用户体验',
-    image: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=600&h=400&fit=crop',
-    features: ['原生开发', 'Swift/SwiftUI', '性能优化', 'App Store上架'],
-    category: '移动开发'
-  },
-  {
-    id: 6,
-    name: 'Android应用开发',
-    description: '专业Android应用开发，覆盖主流设备',
-    image: 'https://images.unsplash.com/photo-1607252650355-f7fd0460ccdb?w=600&h=400&fit=crop',
-    features: ['原生开发', 'Kotlin', '多设备适配', '应用商店上架'],
-    category: '移动开发'
-  },
-  {
-    id: 7,
-    name: '数字化转型咨询',
-    description: '为企业提供全面的数字化转型战略规划与实施指导',
-    image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=600&h=400&fit=crop',
-    features: ['战略规划', '流程优化', '技术选型', '实施指导'],
-    category: '咨询服务'
-  },
-  {
-    id: 8,
-    name: 'IT架构咨询',
-    description: '专业的IT架构设计与优化咨询服务',
-    image: 'https://images.unsplash.com/photo-1551434678-e076c223a692?w=600&h=400&fit=crop',
-    features: ['架构评估', '方案设计', '技术选型', '性能优化'],
-    category: '咨询服务'
-  }
-])
+// 全部产品即项目列表，看板与列表共用同一份数据
+const products = ref<ProductItem[]>(allProducts)
 
-const filteredProducts = computed(() => {
-  if (!activeCategory.value) return products.value
-  return products.value.filter(p => p.category === activeCategory.value)
-})
+// 当前产品列表的分类筛选；deliveredOnly 表示只看已上线运维项目（看板同口径）
+const activeCategory = ref('')
+const deliveredOnly = ref(false)
+// 看板当前选中的行业（'' 为合计），通过 query 保持，回到页面时仍停在原行业
+const boardIndustry = ref('')
+
+const productsSectionRef = ref<HTMLElement | null>(null)
+
+// 将筛选状态同步到 URL，刷新 / 前进后退后仍可还原
+const syncQuery = () => {
+  const query: Record<string, string> = {}
+  if (activeCategory.value) query.cat = activeCategory.value
+  if (deliveredOnly.value) query.live = '1'
+  if (boardIndustry.value) query.board = boardIndustry.value
+  router.replace({ path: '/products', query })
+}
+
+const readQuery = () => {
+  const cat = (route.query.cat as string) || ''
+  const live = route.query.live === '1'
+  const board = (route.query.board as string) || ''
+  activeCategory.value = categories.some(c => c.value === cat) ? cat : ''
+  deliveredOnly.value = live
+  // board 必须是看板内有效的行业，非法值回落到合计
+  boardIndustry.value = deliveredProducts().some(p => p.category === board) || board === ''
+    ? board
+    : ''
+}
+
+const handleCategoryChange = (value: string) => {
+  activeCategory.value = value
+  syncQuery()
+}
+
+// 从看板点击「查看某行业产品列表」：筛选该行业的上线运维项目
+const handleBrowseProducts = (industry: string) => {
+  activeCategory.value = industry
+  deliveredOnly.value = true
+  syncQuery()
+  productsSectionRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
+// 从看板点击「查看服务案例入口」
+const handleBrowseCases = () => {
+  router.push({
+    path: '/cases',
+    query: boardIndustry.value ? { from: 'board', industry: boardIndustry.value } : { from: 'board' }
+  })
+}
+
+const exitDeliveredView = () => {
+  deliveredOnly.value = false
+  syncQuery()
+}
+
+// 空态下「查看该行业全部产品」：保留行业，去掉上线口径限制
+const showAllInCategory = () => {
+  deliveredOnly.value = false
+  syncQuery()
+}
+
+// 浏览器前进 / 后退时还原看板与列表状态
+watch(
+  () => route.query,
+  () => readQuery()
+)
+
+// 看板切换行业后持久化到 URL，从案例页返回时仍停在该行业
+watch(boardIndustry, () => syncQuery())
+
+readQuery()
+
+const filteredProducts = computed(() =>
+  filterProducts(products.value, activeCategory.value, deliveredOnly.value)
+)
+
+const statusClass = (status: DeliveryStatus) => {
+  if (status === '已上线运维') return 'is-online'
+  if (status === '测试验收中') return 'is-testing'
+  return 'is-building'
+}
 
 const processSteps = [
   { title: '需求沟通', description: '深入了解业务需求，明确项目目标与范围' },
@@ -350,6 +418,7 @@ const showDetail = (product: ProductItem) => {
 // ==================== 产品列表 ====================
 .products-section {
   padding: $spacing-4xl $spacing-lg;
+  scroll-margin-top: $header-height;
 }
 
 .products-container {
@@ -357,10 +426,57 @@ const showDetail = (product: ProductItem) => {
   margin: 0 auto;
 }
 
+// 看板口径提示条
+.delivered-banner {
+  display: flex;
+  align-items: center;
+  gap: $spacing-sm;
+  flex-wrap: wrap;
+  padding: $spacing-md $spacing-lg;
+  margin-bottom: $spacing-xl;
+  background: rgba($success-color, 0.08);
+  border: 1px solid rgba($success-color, 0.25);
+  border-radius: $border-radius-lg;
+  font-size: $font-size-sm;
+  color: $text-color-regular;
+
+  .banner-icon {
+    color: $success-color;
+    font-size: 20px;
+  }
+
+  .banner-text {
+    flex: 1;
+    min-width: 240px;
+
+    strong {
+      color: $success-color;
+    }
+  }
+}
+
 .products-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: $spacing-xl;
+}
+
+.products-empty {
+  padding: $spacing-3xl 0;
+
+  .empty-desc {
+    .empty-title {
+      font-size: $font-size-md;
+      font-weight: 600;
+      color: $text-color-primary;
+      margin-bottom: $spacing-xs;
+    }
+
+    p:last-child {
+      font-size: $font-size-sm;
+      color: $text-color-secondary;
+    }
+  }
 }
 
 .product-card {
@@ -407,6 +523,42 @@ const showDetail = (product: ProductItem) => {
       font-weight: 600;
       border-radius: $border-radius-full;
     }
+
+    .product-status {
+      position: absolute;
+      top: $spacing-md;
+      right: $spacing-md;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: $spacing-xs $spacing-sm;
+      backdrop-filter: blur(10px);
+      font-size: $font-size-xs;
+      font-weight: 600;
+      border-radius: $border-radius-full;
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: $border-radius-round;
+        background: currentColor;
+      }
+
+      &.is-online {
+        background: rgba(16, 185, 129, 0.92);
+        color: white;
+      }
+
+      &.is-testing {
+        background: rgba(245, 158, 11, 0.92);
+        color: white;
+      }
+
+      &.is-building {
+        background: rgba(0, 0, 0, 0.55);
+        color: white;
+      }
+    }
   }
   
   .product-content {
@@ -452,6 +604,13 @@ const showDetail = (product: ProductItem) => {
       margin-top: auto;
     }
   }
+}
+
+// ==================== 交付成效看板 ====================
+.board-section {
+  padding: $spacing-4xl $spacing-lg;
+  background: $bg-color-light;
+  scroll-margin-top: $header-height;
 }
 
 // ==================== 服务流程 ====================
@@ -605,14 +764,42 @@ const showDetail = (product: ProductItem) => {
         font-size: $font-size-sm;
         color: $text-color-regular;
         border-bottom: 1px dashed $border-color-light;
-        
+
         .el-icon {
           color: $success-color;
         }
-        
+
         &:last-child {
           border-bottom: none;
         }
+      }
+    }
+
+    .dialog-delivery {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: $spacing-md;
+      margin-top: $spacing-lg;
+      padding: $spacing-md;
+      background: $bg-color-light;
+      border-radius: $border-radius-md;
+
+      .delivery-item {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        text-align: center;
+      }
+
+      .delivery-label {
+        font-size: $font-size-xs;
+        color: $text-color-secondary;
+      }
+
+      .delivery-value {
+        font-size: $font-size-sm;
+        font-weight: 600;
+        color: $text-color-primary;
       }
     }
   }
@@ -641,8 +828,12 @@ const showDetail = (product: ProductItem) => {
   
   :deep(.el-dialog) {
     width: 95% !important;
-    
+
     .dialog-content {
+      grid-template-columns: 1fr;
+    }
+
+    .dialog-info .dialog-delivery {
       grid-template-columns: 1fr;
     }
   }
