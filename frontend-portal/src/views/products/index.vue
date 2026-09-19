@@ -12,12 +12,12 @@
     <!-- 产品分类 -->
     <section class="category-section">
       <div class="category-container">
-        <button 
-          v-for="cat in categories" 
+        <button
+          v-for="cat in categories"
           :key="cat.value"
           class="category-btn"
           :class="{ active: activeCategory === cat.value }"
-          @click="activeCategory = cat.value"
+          @click="setActiveCategory(cat.value)"
         >
           <span class="cat-icon">{{ cat.icon }}</span>
           <span>{{ cat.label }}</span>
@@ -26,7 +26,7 @@
     </section>
 
     <!-- 产品列表 -->
-    <section class="products-section">
+    <section id="product-list" class="products-section">
       <div class="products-container">
         <div class="products-grid">
           <div 
@@ -53,8 +53,12 @@
             </div>
           </div>
         </div>
+        <el-empty v-if="filteredProducts.length === 0" description="该分类暂无已上线的产品，项目完成测试验收后展示" />
       </div>
     </section>
+
+    <!-- 交付成效看板 -->
+    <DeliveryDashboard />
 
     <!-- 服务流程 -->
     <section class="process-section">
@@ -131,91 +135,25 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { storeToRefs } from 'pinia'
+import { useProductsStore } from '@/stores'
+import DeliveryDashboard from '@/components/common/DeliveryDashboard.vue'
 import type { ProductItem } from '@/types'
 
 const router = useRouter()
-const activeCategory = ref('')
+const productsStore = useProductsStore()
+// 分类选择保存在 store 中：看板与产品列表联动，从案例页返回时仍停留在已选行业
+const { activeCategory } = storeToRefs(productsStore)
+const { categories, setActiveCategory } = productsStore
+
 const dialogVisible = ref(false)
 const currentProduct = ref<ProductItem | null>(null)
 
-const categories = [
-  { label: '全部服务', value: '', icon: '📦' },
-  { label: '网站建设', value: '网站建设', icon: '🖥️' },
-  { label: '电商服务', value: '电商服务', icon: '🛒' },
-  { label: '移动开发', value: '移动开发', icon: '📱' },
-  { label: '咨询服务', value: '咨询服务', icon: '💼' }
-]
-
-const products = ref<ProductItem[]>([
-  {
-    id: 1,
-    name: '企业官网建设',
-    description: '专业的企业官网设计与开发，打造品牌数字形象，提升企业影响力',
-    image: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=600&h=400&fit=crop',
-    features: ['响应式设计', 'SEO优化', '后台管理系统', '多语言支持', '安全防护'],
-    category: '网站建设'
-  },
-  {
-    id: 2,
-    name: '品牌展示网站',
-    description: '高端品牌展示网站，突出品牌特色，传递品牌价值',
-    image: 'https://images.unsplash.com/photo-1467232004584-a241de8bcf5d?w=600&h=400&fit=crop',
-    features: ['创意设计', '动效交互', '品牌定制', '视觉冲击'],
-    category: '网站建设'
-  },
-  {
-    id: 3,
-    name: 'B2C电商平台',
-    description: '全功能B2C电商平台解决方案，助力线上业务快速增长',
-    image: 'https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?w=600&h=400&fit=crop',
-    features: ['商品管理', '订单系统', '支付集成', '营销工具', '数据分析'],
-    category: '电商服务'
-  },
-  {
-    id: 4,
-    name: 'B2B批发平台',
-    description: '专业的B2B批发交易平台，连接供应商与采购商',
-    image: 'https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?w=600&h=400&fit=crop',
-    features: ['批量采购', '询价系统', '供应链管理', '账期结算'],
-    category: '电商服务'
-  },
-  {
-    id: 5,
-    name: 'iOS应用开发',
-    description: '原生iOS应用开发，提供流畅的用户体验',
-    image: 'https://images.unsplash.com/photo-1512941937669-90a1b58e7e9c?w=600&h=400&fit=crop',
-    features: ['原生开发', 'Swift/SwiftUI', '性能优化', 'App Store上架'],
-    category: '移动开发'
-  },
-  {
-    id: 6,
-    name: 'Android应用开发',
-    description: '专业Android应用开发，覆盖主流设备',
-    image: 'https://images.unsplash.com/photo-1607252650355-f7fd0460ccdb?w=600&h=400&fit=crop',
-    features: ['原生开发', 'Kotlin', '多设备适配', '应用商店上架'],
-    category: '移动开发'
-  },
-  {
-    id: 7,
-    name: '数字化转型咨询',
-    description: '为企业提供全面的数字化转型战略规划与实施指导',
-    image: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=600&h=400&fit=crop',
-    features: ['战略规划', '流程优化', '技术选型', '实施指导'],
-    category: '咨询服务'
-  },
-  {
-    id: 8,
-    name: 'IT架构咨询',
-    description: '专业的IT架构设计与优化咨询服务',
-    image: 'https://images.unsplash.com/photo-1551434678-e076c223a692?w=600&h=400&fit=crop',
-    features: ['架构评估', '方案设计', '技术选型', '性能优化'],
-    category: '咨询服务'
-  }
-])
-
+// 产品列表展示已上线运维的项目，与交付成效看板共用同一数据集合，保证两边数量一致
 const filteredProducts = computed(() => {
-  if (!activeCategory.value) return products.value
-  return products.value.filter(p => p.category === activeCategory.value)
+  const list = productsStore.liveProjects
+  if (!activeCategory.value) return list
+  return list.filter(p => p.category === activeCategory.value)
 })
 
 const processSteps = [
@@ -350,6 +288,8 @@ const showDetail = (product: ProductItem) => {
 // ==================== 产品列表 ====================
 .products-section {
   padding: $spacing-4xl $spacing-lg;
+  // 看板「查看产品」入口滚动定位时，避开固定头部与吸顶分类栏
+  scroll-margin-top: calc($header-height + 72px);
 }
 
 .products-container {

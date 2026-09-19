@@ -33,6 +33,19 @@ export interface NewsItem {
 }
 
 // ==================== 产品相关 ====================
+/** 项目交付阶段，与服务流程各环节一一对应 */
+export type DeliveryStage = '需求沟通' | '方案设计' | '开发实施' | '测试验收' | '上线运维'
+
+/** 项目交付信息 */
+export interface ProjectDelivery {
+  /** 当前所处的交付阶段 */
+  stage: DeliveryStage
+  /** 交付周期（周） */
+  cycleWeeks: number
+  /** 客户满意度（%），null 表示暂未收集到评价数据 */
+  satisfaction: number | null
+}
+
 export interface ProductItem {
   id: number
   name: string
@@ -41,6 +54,24 @@ export interface ProductItem {
   features: string[]
   price?: number
   category: string
+  /** 项目交付信息，处于「上线运维」阶段的项目会纳入交付成效看板统计 */
+  delivery?: ProjectDelivery
+}
+
+// ==================== 交付成效看板 ====================
+export interface IndustryDeliveryStats {
+  /** 行业（产品分类），'' 表示全部行业合计 */
+  industry: string
+  /** 已上线运维的项目数量 */
+  projectCount: number
+  /** 平均交付周期（周），无项目时为 null */
+  avgCycleWeeks: number | null
+  /** 平均客户满意度（%），无评价数据时为 null */
+  avgSatisfaction: number | null
+  /** 计入满意度平均分的项目数 */
+  satisfactionSampleCount: number
+  /** 因缺少满意度数据而未计入平均分的项目数 */
+  satisfactionExcludedCount: number
 }
 
 // ==================== 联系表单 ====================
